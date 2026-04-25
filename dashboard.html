@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>抖音数据驾驶舱</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2/dist/echarts-wordcloud.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Inter','PingFang SC','Microsoft YaHei',sans-serif;
+  background:#0a0a1a;color:#e0e0e0;min-height:100vh;overflow-x:hidden;
+}
+/* 动态星云背景 */
+body::before{
+  content:'';position:fixed;top:0;left:0;width:100%;height:100%;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%,rgba(88,0,255,0.12),transparent),
+    radial-gradient(ellipse 60% 40% at 20% 80%,rgba(255,0,100,0.08),transparent),
+    radial-gradient(ellipse 50% 50% at 80% 60%,rgba(0,150,255,0.06),transparent),
+    radial-gradient(ellipse 40% 40% at 30% 30%,rgba(255,200,0,0.03),transparent);
+  pointer-events:none;z-index:0;
+}
+/* 浮动光点 */
+@keyframes float1{0%,100%{transform:translate(0,0)}50%{transform:translate(60px,-40px)}}
+@keyframes float2{0%,100%{transform:translate(0,0)}50%{transform:translate(-30px,50px)}}
+@keyframes float3{0%,100%{transform:translate(0,0)}50%{transform:translate(50px,30px)}}
+.glow-dot{
+  position:fixed;border-radius:50%;pointer-events:none;z-index:0;
+  filter:blur(60px);opacity:0.3;
+}
+.glow-dot.d1{width:300px;height:300px;background:#5500ff;top:10%;left:5%;animation:float1 12s ease-in-out infinite}
+.glow-dot.d2{width:250px;height:250px;background:#ff0066;top:50%;right:10%;animation:float2 15s ease-in-out infinite}
+.glow-dot.d3{width:200px;height:200px;background:#00aaff;bottom:10%;left:40%;animation:float3 10s ease-in-out infinite}
+
+/* 头部 */
+.header{
+  position:relative;z-index:1;padding:20px 32px 16px;
+  background:linear-gradient(180deg,rgba(20,20,50,0.95) 0%,transparent 100%);
+  border-bottom:1px solid rgba(255,255,255,0.05);
+}
+.header-inner{max-width:1440px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.header-left{display:flex;align-items:center;gap:16px}
+.logo-icon{
+  width:40px;height:40px;border-radius:10px;
+  background:linear-gradient(135deg,#ff6b6b,#a855f7,#3b82f6);
+  display:flex;align-items:center;justify-content:center;font-size:18px;
+}
+.header h1{font-size:22px;font-weight:700;background:linear-gradient(90deg,#ff6b6b,#a855f7,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header .subtitle{color:rgba(255,255,255,0.4);font-size:13px;margin-top:2px}
+.header-right{display:flex;align-items:center;gap:16px;font-size:13px;color:rgba(255,255,255,0.4)}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-dot.online{background:#22c55e;box-shadow:0 0 8px #22c55e;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+
+/* 容器 */
+.container{position:relative;z-index:1;max-width:1440px;margin:0 auto;padding:20px 24px 40px}
+
+/* 通用卡片 */
+.glass{
+  background:linear-gradient(135deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:16px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.3);
+}
+.glass:hover{border-color:rgba(255,255,255,0.15)}
+
+/* 指标行 */
+.metrics-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.metric-card{
+  padding:18px 16px;position:relative;overflow:hidden;cursor:default;
+}
+.metric-card .icon{font-size:20px;margin-bottom:6px}
+.metric-card .label{font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;font-weight:500;margin-bottom:4px}
+.metric-card .value{font-size:26px;font-weight:700;letter-spacing:-0.5px}
+.metric-card .sub{font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px}
+.metric-card .sparkline{height:40px;margin-top:8px}
+
+/* 颜色主题 */
+.c-play .value{color:#ff6b6b}.c-like .value{color:#ffa94d}
+.c-comment .value{color:#74c0fc}.c-share .value{color:#69db7c}
+.c-view .value{color:#a855f7}.c-engage .value{color:#22d3ee}
+.c-complete .value{color:#34d399}.c-bounce .value{color:#f472b6}
+
+/* 最新视频卡片 */
+.latest-section{margin-bottom:20px}
+.latest-card{
+  display:grid;grid-template-columns:auto 1fr;gap:24px;padding:24px;
+  background:linear-gradient(135deg,rgba(88,0,255,0.12) 0%,rgba(255,0,100,0.06) 100%);
+  border:1px solid rgba(139,92,246,0.2);
+}
+.latest-card:hover{border-color:rgba(139,92,246,0.35)}
+.latest-badge{
+  display:inline-block;padding:2px 10px;border-radius:20px;
+  background:linear-gradient(90deg,#ff6b6b,#a855f7);font-size:10px;font-weight:600;
+  text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;
+}
+.latest-title{font-size:18px;font-weight:600;margin-bottom:4px;color:#fff}
+.latest-meta{font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:12px}
+.latest-stats{display:flex;gap:20px;flex-wrap:wrap}
+.latest-stat{text-align:center}
+.latest-stat .num{font-size:18px;font-weight:700;display:block}
+.latest-stat .lbl{font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.5px}
+.latest-progress{flex:1;min-width:200px;margin-top:8px}
+.latest-progress .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.latest-progress .bar-row .p-label{font-size:11px;color:rgba(255,255,255,0.4);width:80px;flex-shrink:0}
+.latest-progress .bar-track{flex:1;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden}
+.latest-progress .bar-fill{height:100%;border-radius:3px;transition:width 1s ease}
+.bar-fill.good{background:linear-gradient(90deg,#34d399,#22d3ee)}
+.bar-fill.warn{background:linear-gradient(90deg,#f472b6,#f87171)}
+
+/* 图表行 */
+.chart-row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
+.chart-row-full{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+.chart-row-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.chart-box{padding:16px;min-height:320px}
+.chart-box h3{font-size:13px;color:rgba(255,255,255,0.5);font-weight:500;letter-spacing:0.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.chart-box .chart{width:100%;height:290px}
+
+/* 表格 */
+.table-box{padding:16px;overflow-x:auto;margin-bottom:0}
+.table-box h3{font-size:13px;color:rgba(255,255,255,0.5);font-weight:500;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
+thead th{
+  padding:8px 10px;text-align:left;color:rgba(255,255,255,0.35);font-weight:500;
+  border-bottom:1px solid rgba(255,255,255,0.06);position:sticky;top:0;
+  background:rgba(10,10,26,0.95);white-space:nowrap;font-size:11px;letter-spacing:0.5px;
+}
+tbody td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.03);white-space:nowrap}
+tbody tr:hover{background:rgba(255,255,255,0.03)}
+tbody tr:last-child td{border-bottom:none}
+.video-title{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,0.8)}
+.num-cell{font-weight:600;font-variant-numeric:tabular-nums}
+.trend-up{color:#34d399}.trend-down{color:#f87171}
+
+/* 进度条-表格内 */
+.progress-mini{width:60px;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:6px}
+.progress-mini .fill{height:100%;border-radius:2px;transition:width 0.5s}
+
+/* 情感标签 */
+.tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:500}
+.tag.pos{background:rgba(52,211,153,0.15);color:#34d399}
+.tag.neg{background:rgba(248,113,113,0.15);color:#f87171}
+.tag.neu{background:rgba(148,163,184,0.15);color:#94a3b8}
+.tag.hot{background:rgba(251,191,36,0.2);color:#fbbf24}
+.tag.good{background:rgba(52,211,153,0.15);color:#34d399}
+.tag.warn{background:rgba(251,191,36,0.15);color:#fbbf24}
+
+/* 响应式 */
+@media(max-width:1024px){
+  .chart-row,.chart-row-full,.chart-row-2{grid-template-columns:1fr}
+  .latest-card{grid-template-columns:1fr}
+  .header-inner{flex-direction:column;align-items:flex-start;gap:8px}
+}
+
+/* 滚动条 */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.2)}
+</style>
+</head>
+<body>
+
+<div class="glow-dot d1"></div>
+<div class="glow-dot d2"></div>
+<div class="glow-dot d3"></div>
+
+<div class="header">
+  <div class="header-inner">
+    <div class="header-left">
+      <div class="logo-icon"></div>
+      <div>
+        <h1>  抖音数据驾驶舱</h1>
+        <div class="subtitle">实时监控  ·  智能分析  ·  数据驱动决策</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <span><span class="status-dot online"></span>系统运行中</span>
+      <span id="headerTime">--</span>
+      <span id="headerStats">--</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- 指标行 -->
+  <div class="metrics-row" id="metricCards"></div>
+
+  <!-- 最新视频 -->
+  <div class="latest-section" id="latestSection"></div>
+
+  <!-- 图表第一行 -->
+  <div class="chart-row">
+    <div class="chart-box glass">
+      <h3>  数据增长趋势</h3>
+      <div class="chart" id="trendChart"></div>
+    </div>
+    <div class="chart-box glass">
+      <h3>  综合指标</h3>
+      <div class="chart" id="radarChart"></div>
+    </div>
+  </div>
+
+  <!-- 图表第二行 -->
+  <div class="chart-row-full">
+    <div class="chart-box glass">
+      <h3>  视频播放排行 Top 10</h3>
+      <div class="chart" id="rankChart"></div>
+    </div>
+    <div class="chart-box glass">
+      <h3>  完播率 vs 5秒跳出率</h3>
+      <div class="chart" id="qualityChart"></div>
+    </div>
+    <div class="chart-box glass">
+      <h3>  视频时长分布</h3>
+      <div class="chart" id="durationChart"></div>
+    </div>
+  </div>
+
+  <!-- 图表第三行 -->
+  <div class="chart-row-2">
+    <div class="chart-box glass">
+      <h3>  评论情感分析</h3>
+      <div class="chart" id="sentimentChart"></div>
+    </div>
+    <div class="chart-box glass">
+      <h3>  评论关键词云</h3>
+      <div class="chart" id="keywordChart"></div>
+    </div>
+  </div>
+
+  <!-- 视频数据表格 -->
+  <div class="table-box glass" style="margin-top:16px">
+    <h3>  全部视频数据明细</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>视频标题</th>
+            <th>时长</th>
+            <th>播放</th>
+            <th>点赞</th>
+            <th>评论</th>
+            <th>分享</th>
+            <th>互动率</th>
+            <th>完播率</th>
+            <th>5s跳出</th>
+            <th>情感</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─── 工具 ────────────────────────────────────────────────
+const F=(n)=>{if(n===0||n===undefined||n===null)return'0';if(n>=1e8)return(n/1e8).toFixed(1)+'亿';if(n>=1e4)return(n/1e4).toFixed(1)+'万';return n.toLocaleString()}
+const P=(n)=>{const v=Number(n);return v>0?v.toFixed(1)+'%':'--'}
+const T=(s,l=20)=>{if(!s)return'--';return s.length>l?s.slice(0,l)+'…':s}
+const E=(s)=>{if(!s)return'';return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c])}
+
+const COLORS=['#ff6b6b','#ffa94d','#ffd43b','#69db7c','#74c0fc','#a855f7','#f472b6','#22d3ee','#fb923c','#c084fc']
+const C1=(i)=>COLORS[i%COLORS.length]
+
+// ─── 加载数据 ────────────────────────────────────────────
+async function load(){
+  try{
+    const r=await fetch('/api/data');const d=await r.json();
+    if(d.status==='error')throw new Error(d.message);
+    render(d);
+  }catch(e){
+    document.querySelector('.container').innerHTML=
+      `<div style="text-align:center;padding:80px 20px;color:rgba(255,255,255,0.3)">
+        <div style="font-size:40px;margin-bottom:16px"></div>
+        <div style="font-size:18px;margin-bottom:8px">数据加载失败</div>
+        <div style="font-size:13px">${e.message}<br>请先运行一次性数据采集</div>
+      </div>`;
+  }
+}
+
+// ─── 主渲染 ──────────────────────────────────────────────
+function render(d){
+  renderMetrics(d);
+  renderLatest(d);
+  renderTrend(d);
+  renderRadar(d);
+  renderRank(d);
+  renderQuality(d);
+  renderDuration(d);
+  renderSentiment(d);
+  renderKeyword(d);
+  renderTable(d);
+  // 头部信息
+  const lu=d.last_update;
+  if(lu){
+    const dd=new Date(lu*1000);
+    document.getElementById('headerTime').textContent=dd.toLocaleString('zh-CN');
+  }
+  const vc=d.videos?.length||0,cc=d.comments_count||0;
+  document.getElementById('headerStats').textContent=`  ${vc}视频 · ${cc}评论`;
+}
+
+// ─── 指标卡 ──────────────────────────────────────────────
+function renderMetrics(d){
+  const t=d.totals||{};
+  const html=`
+    <div class="metric-card glass c-play"><div class="icon"></div><div class="label">总播放</div><div class="value">${F(t.plays)}</div><div class="sub">${t.videos||0} 个视频</div></div>
+    <div class="metric-card glass c-like"><div class="icon"></div><div class="label">总点赞</div><div class="value">${F(t.diggs)}</div><div class="sub">点赞率 ${t.diggs>0&&t.plays>0?(t.diggs/t.plays*100).toFixed(1):'0'}%</div></div>
+    <div class="metric-card glass c-comment"><div class="icon"></div><div class="label">总评论</div><div class="value">${F(t.comments)}</div><div class="sub">${d.comments_count||0} 条分析</div></div>
+    <div class="metric-card glass c-share"><div class="icon"></div><div class="label">总分享</div><div class="value">${F(t.shares)}</div><div class="sub">转发 ${F(t.forwards)} · 下载 ${F(t.downloads)}</div></div>
+    <div class="metric-card glass c-engage"><div class="icon"></div><div class="label">互动率</div><div class="value">${t.engagement_rate||0}%</div><div class="sub">(赞+评+分)/播放</div></div>
+    <div class="metric-card glass c-complete"><div class="icon"></div><div class="label">平均完播率</div><div class="value">${P(t.avg_completion_rate)}</div><div class="sub">留存质量</div></div>
+    <div class="metric-card glass c-bounce"><div class="icon"></div><div class="label">5秒跳出率</div><div class="value">${P(t.avg_bounce_rate)}</div><div class="sub">越低越好</div></div>
+  `;
+  document.getElementById('metricCards').innerHTML=html;
+}
+
+// ─── 最新视频 ────────────────────────────────────────────
+function renderLatest(d){
+  const lv=d.latest_video;
+  if(!lv){
+    document.getElementById('latestSection').innerHTML='';
+    return;
+  }
+  const cr=Number(lv.completion_rate||0);
+  const br=Number(lv.bounce_5s_rate||0);
+  const trend=(lv.recent_trend||[]).map(t=>({time:new Date(t.snapshot_at*1000).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit'}),plays:t.play_count}));
+
+  document.getElementById('latestSection').innerHTML=`
+    <div class="latest-card glass">
+      <div style="min-width:200px">
+        <div class="latest-badge">  最新发布</div>
+        <div class="latest-title">${E(lv.title||'无标题')}</div>
+        <div class="latest-meta">创建时间: ${lv.create_time?new Date(lv.create_time*1000).toLocaleString('zh-CN'):'--'}  ·  时长 ${lv.duration?Math.floor(lv.duration/60)+'分'+lv.duration%60+'秒':'--'}</div>
+        <div class="latest-stats">
+          <div class="latest-stat"><span class="num" style="color:#ff6b6b">${F(lv.play_count)}</span><span class="lbl">播放</span></div>
+          <div class="latest-stat"><span class="num" style="color:#ffa94d">${F(lv.digg_count)}</span><span class="lbl">点赞</span></div>
+          <div class="latest-stat"><span class="num" style="color:#74c0fc">${F(lv.comment_count)}</span><span class="lbl">评论</span></div>
+          <div class="latest-stat"><span class="num" style="color:#69db7c">${F(lv.share_count)}</span><span class="lbl">分享</span></div>
+          <div class="latest-stat"><span class="num" style="color:#a855f7">${lv.engagement_rate||0}%</span><span class="lbl">互动率</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="latest-progress">
+          <div class="bar-row">
+            <span class="p-label">  完播率</span>
+            <div class="bar-track"><div class="bar-fill good" style="width:${Math.min(cr,100)}%"></div></div>
+            <span style="font-size:13px;font-weight:600;color:#34d399;min-width:48px;text-align:right">${cr.toFixed(1)}%</span>
+          </div>
+          <div class="bar-row">
+            <span class="p-label">  5秒跳出</span>
+            <div class="bar-track"><div class="bar-fill warn" style="width:${Math.min(br*100,100)}%"></div></div>
+            <span style="font-size:13px;font-weight:600;color:#f472b6;min-width:48px;text-align:right">${(br*100).toFixed(1)}%</span>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.3)">  最近 ${trend.length} 个快照增长趋势</div>
+        <div style="display:flex;gap:4px;margin-top:6px">
+          ${trend.map((t,i)=>`<div style="flex:1;text-align:center;font-size:10px;color:rgba(255,255,255,0.25)">
+            <div style="position:relative;height:40px;display:flex;align-items:flex-end;justify-content:center;gap:2px;margin-bottom:4px">
+              ${(()=>{const h=t.plays/(Math.max(...trend.map(x=>x.plays),1))*36;return `<div style="width:14px;height:${Math.max(h,4)}px;background:linear-gradient(180deg,#ff6b6b,#a855f7);border-radius:3px 3px 0 0;transition:height 0.3s"></div>`})()}
+            </div>
+            <div>${t.time}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
+// ─── 趋势图 ──────────────────────────────────────────────
+function renderTrend(d){
+  const ch=echarts.init(document.getElementById('trendChart'));
+  const tl=d.timeline||[];
+  if(!tl.length){ch.setOption({backgroundColor:'transparent'});return}
+  const dates=tl.map(t=>{const d2=new Date(t.snapshot_at*1000);return `${d2.getMonth()+1}/${d2.getDate()} ${d2.getHours()}:00`});
+  ch.setOption({
+    tooltip:{trigger:'axis'},
+    legend:{data:['播放','点赞','评论','分享'],textStyle:{color:'rgba(255,255,255,0.4)',fontSize:10},top:0},
+    grid:{left:'3%',right:'3%',bottom:'3%',top:'18%',containLabel:true},
+    xAxis:{type:'category',data:dates,axisLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}},axisLabel:{color:'rgba(255,255,255,0.3)',fontSize:10}},
+    yAxis:{type:'value',splitLine:{lineStyle:{color:'rgba(255,255,255,0.04)'}},axisLabel:{color:'rgba(255,255,255,0.3)',fontSize:10,formatter:v=>v>=1e4?(v/1e4)+'w':v}},
+    series:[
+      {name:'播放',type:'line',smooth:true,symbol:'none',lineStyle:{width:2,color:'#ff6b6b'},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(255,107,107,0.25)'},{offset:1,color:'rgba(255,107,107,0)'}]}},data:tl.map(t=>t.total_plays)},
+      {name:'点赞',type:'line',smooth:true,symbol:'none',lineStyle:{width:2,color:'#ffa94d'},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(255,169,77,0.2)'},{offset:1,color:'rgba(255,169,77,0)'}]}},data:tl.map(t=>t.total_diggs)},
+      {name:'评论',type:'line',smooth:true,symbol:'none',lineStyle:{width:2,color:'#74c0fc'},data:tl.map(t=>t.total_comments)},
+      {name:'分享',type:'line',smooth:true,symbol:'none',lineStyle:{width:2,color:'#69db7c'},data:tl.map(t=>t.total_shares)},
+    ],
+    backgroundColor:'transparent',
+  });window.addEventListener('resize',()=>ch.resize());
+}
+
+// ─── 雷达图 ──────────────────────────────────────────────
+function renderRadar(d){
+  const ch=echarts.init(document.getElementById('radarChart'));
+  const t=d.totals||{};
+  // 规范化各指标到 0-100
+  const plays=Math.min((t.plays||0)/200000*100,100);
+  const diggs=Math.min((t.diggs||0)/15000*100,100);
+  const comments=Math.min((t.comments||0)/2000*100,100);
+  const shares=Math.min((t.shares||0)/1000*100,100);
+  const engage=Math.min((t.engagement_rate||0)*10,100);
+  const complete=Math.min((t.avg_completion_rate||0)*2,100);
+  ch.setOption({
+    tooltip:{},
+    radar:{
+      indicator:[
+        {name:'播放量',max:100},{name:'点赞量',max:100},{name:'评论量',max:100},
+        {name:'分享量',max:100},{name:'互动率',max:100},{name:'完播率',max:100}
+      ],
+      axisName:{color:'rgba(255,255,255,0.4)',fontSize:10},
+      splitArea:{areaStyle:{color:['rgba(88,0,255,0.02)','rgba(88,0,255,0.04)','rgba(88,0,255,0.06)','rgba(88,0,255,0.08)','rgba(88,0,255,0.1)']}},
+      axisLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}},
+      splitLine:{lineStyle:{color:'rgba(255,255,255,0.06)'}},
+    },
+    series:[{
+      type:'radar',data:[{value:[plays,diggs,comments,shares,engage,complete]}],
+      areaStyle:{color:{type:'radial',x:0.5,y:0.5,r:0.5,colorStops:[{offset:0,color:'rgba(168,85,247,0.4)'},{offset:1,color:'rgba(59,130,246,0.1)'}]}},
+      lineStyle:{color:'#a855f7',width:2},
+      itemStyle:{color:'#a855f7'},
+    }],
+    backgroundColor:'transparent',
+  });window.addEventListener('resize',()=>ch.resize());
+}
+
+// ─── 播放排行 ────────────────────────────────────────────
+function renderRank(d){
+  const ch=echarts.init(document.getElementById('rankChart'));
+  const vs=(d.videos||[]).slice(0,10);
+  if(!vs.length){ch.setOption({backgroundColor:'transparent'});return}
+  ch.setOption({
+    tooltip:{trigger:'axis',axisPointer:{type:'shadow'},formatter:function(p){const d2=p[0];const idx=vs.length-1-d2.dataIndex;const v=vs[idx];return `${v.title||'无标题'}<br/>播放: ${F(v.play_count)}<br/>点赞: ${F(v.digg_count)}<br/>互动率: ${v.engagement_rate}%`}},
+    grid:{left:'3%',right:'8%',bottom:'3%',containLabel:true},
+    xAxis:{type:'value',splitLine:{lineStyle:{color:'rgba(255,255,255,0.04)'}},axisLabel:{color:'rgba(255,255,255,0.3)',fontSize:10,formatter:v=>v>=1e4?(v/1e4)+'w':v}},
+    yAxis:{type:'category',data:vs.map(v=>T(v.title,10)).reverse(),axisLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}},axisLabel:{color:'rgba(255,255,255,0.5)',fontSize:10}},
+    series:[{
+      type:'bar',data:vs.map((v,i)=>({value:v.play_count,itemStyle:{color:{type:'linear',x:0,y:0,x2:1,y2:0,colorStops:[{offset:0,color:C1(i)},{offset:1,color:C1(i+3)}]},borderRadius:[0,4,4,0]}})).reverse(),
+      label:{show:true,position:'right',color:'rgba(255,255,255,0.3)',fontSize:10,formatter:p=>F(p.value)},
+      barWidth:'60%',
+    }],
+    backgroundColor:'transparent',
+  });window.addEventListener('resize',()=>ch.resize());
+}
+
+// ─── 完播率 vs 跳出率 ────────────────────────────────────
+function renderQuality(d){
+  const ch=echarts.init(document.getElementById('qualityChart'));
+  const vs=(d.videos||[]).slice(0,10);
+  if(!vs.length){ch.setOption({backgroundColor:'transparent'});return}
+  const names=vs.map(v=>T(v.title,8));
+  ch.setOption({
+    tooltip:{trigger:'axis',formatter:function(p){const i=p[0].dataIndex;const v=vs[i];return `${v.title}<br/>完播率: ${P(v.completion_rate)}<br/>5s跳出: ${P(v.bounce_5s_rate*100)}<br/>时长: ${v.duration?Math.floor(v.duration/60)+':'+String(v.duration%60).padStart(2,'0'):'--'}`}},
+    legend:{data:['完播率','5秒跳出率'],textStyle:{color:'rgba(255,255,255,0.4)',fontSize:10},top:0},
+    grid:{left:'3%',right:'3%',bottom:'3%',top:'14%',containLabel:true},
+    xAxis:{type:'category',data:names,axisLabel:{color:'rgba(255,255,255,0.3)',fontSize:9,rotate:20},axisLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}}},
+    yAxis:{type:'value',max:100,splitLine:{lineStyle:{color:'rgba(255,255,255,0.04)'}},axisLabel:{color:'rgba(255,255,255,0.3)',fontSize:10,formatter:'{value}%'}},
+    series:[
+      {name:'完播率',type:'bar',barWidth:'35%',itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#34d399'},{offset:1,color:'#22d3ee'}]},borderRadius:[4,4,0,0]},data:vs.map(v=>Number((v.completion_rate||0)).toFixed(1)*1)},
+      {name:'5秒跳出率',type:'bar',barWidth:'35%',itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#f472b6'},{offset:1,color:'#f87171'}]},borderRadius:[4,4,0,0]},data:vs.map(v=>Number((v.bounce_5s_rate||0)*100).toFixed(1)*1)},
+    ],
+    backgroundColor:'transparent',
+  });window.addEventListener('resize',()=>ch.resize());
+}
+
+// ─── 时长分布 ────────────────────────────────────────────
+function renderDuration(d){
+  const ch=echarts.init(document.getElementById('durationChart'));
+  const vs=d.videos||[];
+  if(!vs.length){ch.setOption({backgroundColor:'transparent'});return}
+  const bins={'<30s':0,'30-60s':0,'1-3min':0,'3-5min':0,'>5min':0};
+  vs.forEach(v=>{
+    const dur=v.duration||0;
+    if(dur<30)bins['<30s']++;
+    else if(dur<60)bins['30-60s']++;
+    else if(dur<180)bins['1-3min']++;
+    else if(dur<300)bins['3-5min']++;
+    else bins['>5min']++;
+  });
+  ch.setOption({
+    tooltip:{trigger:'item',formatter:'{b}: {c} ({d}%)'},
+    series:[{
+      type:'pie',radius:['35%','65%'],center:['50%','55%'],
+      label:{color:'rgba(255,255,255,0.4)',fontSize:10,formatter:'{b}\n{d}%'},
+      labelLine:{lineStyle:{color:'rgba(255,255,255,0.1)'}},
+      itemStyle:{borderRadius:4,borderColor:'rgba(10,10,26,0.8)',borderWidth:2},
+      data:Object.entries(bins).map(([k,v],i)=>({value:v,name:k,itemStyle:{color:C1(i*2)}})),
+    }],
+    backgroundColor:'transparent',
+  });window.addEventListener('resize',()=>ch.resize());
+}
+
+// ─── 情感饼图 ────────────────────────────────────────────
+function renderSentiment(d){
+  const ch=echarts.init(document.getElementById('sentimentChart'));
+  const s=d.sentiment||{};
+  if(!s.positive&&!s.negative&&!s.neutral){ch.setOption({backgroundColor:'transparent'});return}
+  const total=s.positive+s.negative+s.neutral||1;
+  ch.setOption({
+    tooltip:{trigger:'item',formatter:'{b}: {c} ({d}%)'},
+    series:[{
+      type:'pie',radius:['40%','70%'],center:['50%','55%'],
+      label:{color:'rgba(255,255,255,0.4)',fontSize:11,formatter:'{b}\n{d}%'},
+      labelLine:{lineStyle:{color:'rgba(255,255,255,0.1)'}},
+      itemStyle:{borderRadius:6,borderColor:'rgba(10,10,26,0.8)',borderWidth:3},
+      data:[
+        {value:s.positive,name:'正面',itemStyle:{color:{type:'radial',x:0.5,y:0.5,r:0.5,colorStops:[{offset:0,color:'#34d399'},{offset:1,color:'#10b981'}]}}},
+        {value:s.neutral,name:'中性',itemStyle:{color:{type:'radial',x:0.5,y:0.5,r:0.5,colorStops:[{offset:0,color:'#94a3b8'},{offset:1,color:'#64748b'}]}}},
+        {value:s.negative,name:'负面',itemStyle:{color:{type:'radial',x:0.5,y:0.5,r:0.5,colorStops:[{offset:0,color:'#f87171'},{offset:1,color:'#ef4444'}]}}},
+      ],
+    }],
+    backgroundColor:'transparent',
+  });window.addEventListener('resize',()=>ch.resize());
+}
+
+// ─── 关键词云 ────────────────────────────────────────────
+function renderKeyword(d){
+  const ch=echarts.init(document.getElementById('keywordChart'));
+  const kw=d.keywords||[];
+  if(!kw.length){ch.setOption({backgroundColor:'transparent'});return}
+  const maxC=Math.max(...kw.map(k=>k.count),1);
+  ch.setOption({
+    series:[{
+      type:'wordCloud',shape:'diamond',left:'center',top:'center',width:'90%',height:'90%',
+      sizeRange:[12,32],rotationRange:[-20,20],rotationStep:30,gridSize:8,
+      textStyle:{fontFamily:'PingFang SC,Microsoft YaHei,sans-serif',fontWeight:'bold'},
+      data:kw.slice(0,30).map(k=>({name:k.word,value:k.count,textStyle:{fontSize:12+(k.count/maxC)*20,color:COLORS[Math.floor(Math.random()*COLORS.length)]}})),
+      emphasis:{textStyle:{color:'#fff'}},
+    }],
+    backgroundColor:'transparent',
+  });window.addEventListener('resize',()=>ch.resize());
+}
+
+// ─── 表格 ────────────────────────────────────────────────
+function renderTable(d){
+  const vs=d.videos||[];
+  if(!vs.length){
+    document.getElementById('tableBody').innerHTML='<tr><td colspan="11" style="text-align:center;color:rgba(255,255,255,0.2);padding:20px">暂无数据</td></tr>';
+    return;
+  }
+  const sm=d.video_sentiments||{};
+  document.getElementById('tableBody').innerHTML=vs.map((v,i)=>{
+    const s=sm[v.item_id]||{};
+    const pos=s.positive||0,neg=s.negative||0,neu=s.neutral||0;
+    const to=pos+neg+neu||1;
+    const tag=pos>neg?'pos':neg>pos?'neg':'neu';
+    const tagL=tag==='pos'?' 正面':tag==='neg'?' 负面':'中性';
+    const cr=Number(v.completion_rate||0);
+    const br=Number(v.bounce_5s_rate||0);
+    const dur=v.duration?Math.floor(v.duration/60)+':'+String(v.duration%60).padStart(2,'0'):'--';
+    return `<tr>
+      <td style="color:rgba(255,255,255,0.2)">${i+1}</td>
+      <td class="video-title" title="${E(v.title)}">${E(T(v.title,30))}</td>
+      <td class="num-cell" style="color:rgba(255,255,255,0.5);font-size:11px">${dur}</td>
+      <td class="num-cell" style="color:#ff6b6b">${F(v.play_count)}</td>
+      <td class="num-cell" style="color:#ffa94d">${F(v.digg_count)}</td>
+      <td class="num-cell" style="color:#74c0fc">${F(v.comment_count)}</td>
+      <td class="num-cell" style="color:#69db7c">${F(v.share_count)}</td>
+      <td class="num-cell" style="color:#22d3ee">${v.engagement_rate||0}%</td>
+      <td><div style="display:flex;align-items:center;gap:4px"><div class="progress-mini"><div class="fill" style="width:${cr}%;background:linear-gradient(90deg,#34d399,#22d3ee)"></div></div><span style="font-size:11px;color:#34d399;font-weight:500">${cr.toFixed(1)}%</span></div></td>
+      <td><div style="display:flex;align-items:center;gap:4px"><div class="progress-mini"><div class="fill" style="width:${(br*100)}%;background:linear-gradient(90deg,#f472b6,#f87171)"></div></div><span style="font-size:11px;color:#f472b6;font-weight:500">${(br*100).toFixed(1)}%</span></div></td>
+      <td><span class="tag ${tag}">${tagL}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── 启动 ────────────────────────────────────────────────
+load();
+setInterval(load,60000);
+</script>
+</body>
+</html>
